@@ -1,0 +1,17 @@
+.{
+    .name = .gcal,
+    .version = "0.0.0",
+    .fingerprint = 0xf5c6124aa3096cf9, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .zul = .{
+            .url = "git+https://github.com/karlseguin/zul?ref=master#e770047f208cf4538fcd9fc64550c84fd5492fc4",
+            .hash = "zul-0.0.0-1oDot9yRBwDA_ovd6GC1M_ViW3LarywMaGrH6vcuEjqv",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

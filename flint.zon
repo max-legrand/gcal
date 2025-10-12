@@ -1,0 +1,14 @@
+.{
+    .tasks = .{
+        .{
+            .name = "build",
+            .cmd = "zig build --release=safe",
+            .watcher = .{"src/.*\\.zig"},
+        },
+        .{
+            .name = "build-dbg",
+            .cmd = "zig build -fincremental --watch",
+            .keep_alive = true,
+        },
+    },
+}
