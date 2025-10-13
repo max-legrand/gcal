@@ -283,12 +283,12 @@ pub fn main() !void {
         calendar_id,
         tz_offset,
     );
-    defer allocator.free(response);
     defer {
-        for (response) |event| {
+        for (response.events) |event| {
             event.deinit(allocator);
             allocator.destroy(event);
         }
+        allocator.free(response.events);
     }
     if (custom_start) |start_str| {
         allocator.free(start_str);
@@ -314,7 +314,7 @@ pub fn main() !void {
     }
 
     // Process each event and organize by date(s)
-    for (response) |event| {
+    for (response.events) |event| {
         var start_date_value: []const u8 = undefined;
         var end_date_value: []const u8 = undefined;
         const is_all_day = event.start.dateTime == null;
@@ -390,10 +390,20 @@ pub fn main() !void {
         }
     }.lessThan);
 
-    for (dates.items, 0..) |date_key, date_i| {
+    var printed_count: usize = 0;
+    for (dates.items) |date_key| {
         const events = date_groups.get(date_key).?;
 
-        if (date_i > 0) {
+        // If the date is w/in the start and end date range, print it
+        // otherwise, skip.
+        const date_year = try std.fmt.parseInt(i32, date_key[0..4], 10);
+        const date_month = try std.fmt.parseInt(u4, date_key[5..7], 10);
+        const date_day = try std.fmt.parseInt(u5, date_key[8..10], 10);
+        const in_range = (date_year > response.start_date.year or (date_year == response.start_date.year and (date_month > response.start_date.month or (date_month == response.start_date.month and date_day >= response.start_date.day)))) and
+            (date_year < response.end_date.year or (date_year == response.end_date.year and (date_month < response.end_date.month or (date_month == response.end_date.month and date_day <= response.end_date.day))));
+        if (!in_range) continue;
+
+        if (printed_count > 0) {
             try stdout.print("\n", .{});
         }
         try printDivider(stdout, divider_width, '=');
@@ -487,6 +497,7 @@ pub fn main() !void {
             try stdout.print("\n", .{});
             try printDivider(stdout, divider_width, '-');
         }
+        printed_count += 1;
         try stdout.flush();
     }
 
@@ -550,24 +561,29 @@ fn sanitizeDescription(allocator: std.mem.Allocator, description: []const u8) ![
     defer cleaned_lines.deinit(allocator);
     var idx: usize = 0;
     if (lines.items.len > 0) {
-        var empty = false;
-        while (lines.items[idx].len == 0) {
-            idx += 1;
-            if (idx >= lines.items.len) {
-                empty = true;
+        var empty = true;
+        while (idx < lines.items.len) {
+            const line = std.mem.trim(u8, lines.items[idx], " \t\r\n");
+            if (line.len > 0) {
+                empty = false;
                 break;
             }
-        }
-        if (!empty and lines.items[idx][0] == '-') {
-            const start = lines.items[0];
             idx += 1;
+        }
+        const trimmed_line = std.mem.trim(u8, lines.items[idx], " \t\r\n");
+        if (!empty and (trimmed_line[0] == 226 or trimmed_line[0] == '-')) {
+            const start = lines.items[idx];
+            idx += 1;
+            var found_start = false;
             while (idx < lines.items.len) {
                 if (std.mem.eql(u8, lines.items[idx], start)) {
                     idx += 1;
+                    found_start = true;
                     break;
                 }
+                idx += 1;
             }
-            if (idx >= lines.items.len) {
+            if (idx >= lines.items.len and !found_start) {
                 idx = 0;
             }
         }

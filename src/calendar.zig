@@ -87,13 +87,19 @@ pub fn applyTzOffset(date: zul.DateTime, offset: zul.Time) zul.DateTime {
     return d;
 }
 
+const CalendarReturn = struct {
+    events: []*Event,
+    start_date: zul.Date,
+    end_date: zul.Date,
+};
+
 pub fn getData(
     allocator: std.mem.Allocator,
     token: []const u8,
     view_type: TimeFilter,
     calendar_id: []const u8,
     tz_offset: zul.Time,
-) ![]*Event {
+) !CalendarReturn {
     const now_utc = zul.DateTime.now();
 
     const now = applyTzOffset(now_utc, tz_offset);
@@ -103,9 +109,11 @@ pub fn getData(
     defer allocator.free(start_string);
     defer allocator.free(end_string);
 
+    var start_date: zul.Date = undefined;
+    var end_date: zul.Date = undefined;
     switch (view_type) {
         .Week => {
-            var start_date = now.date();
+            start_date = now.date();
             // Move backwards to the start of the week (Sunday).
             const start_dow = zeller(start_date);
             if (start_dow != 1) {
@@ -137,7 +145,7 @@ pub fn getData(
 
             start_string = try dateToString(allocator, start_date, start_time);
 
-            var end_date = start_date;
+            end_date = start_date;
             // Add 6 days to reach the end of the week (Saturday).
             const new_end_day: i16 = @as(i16, @intCast(end_date.day)) + 6;
             // Handle month and year rollover if necessary
@@ -171,6 +179,7 @@ pub fn getData(
             const start_local_micros = start_of_day_local_micros - micros_back;
             const start_utc_micros = if (tz_offset.micros == 1) start_local_micros + tz_offset_micros else start_local_micros - tz_offset_micros;
             const start_utc = zul.DateTime{ .micros = start_utc_micros };
+            start_date = start_utc.date();
             start_string = try dateToString(allocator, start_utc.date(), start_utc.time());
 
             const month_days = utils.getMonthDays(now.date().year);
@@ -179,9 +188,11 @@ pub fn getData(
             const end_utc_micros = if (tz_offset.micros == 1) end_local_micros + tz_offset_micros else end_local_micros - tz_offset_micros;
             const end_utc = zul.DateTime{ .micros = end_utc_micros };
             end_string = try dateToString(allocator, end_utc.date(), end_utc.time());
+            end_date = end_utc.date();
         },
         .Today => {
             const today = now.date();
+            start_date = today;
             const start_time = zul.Time{
                 .hour = 0,
                 .min = 0,
@@ -196,6 +207,7 @@ pub fn getData(
                 .micros = 0,
             };
             end_string = try dateToString(allocator, today, end_time);
+            end_date = today;
         },
         .Tomorrow => {
             var tomorrow = now.date();
@@ -210,6 +222,7 @@ pub fn getData(
                     tomorrow.year += 1;
                 }
             }
+            start_date = tomorrow;
             const start_time = zul.Time{
                 .hour = 0,
                 .min = 0,
@@ -224,6 +237,7 @@ pub fn getData(
                 .micros = 0,
             };
             end_string = try dateToString(allocator, tomorrow, end_time);
+            end_date = tomorrow;
         },
         .Custom => |dates| {
             start_string = try allocator.dupe(u8, dates.start);
@@ -299,11 +313,11 @@ pub fn getData(
         const summary = if (item_map.get("summary") != null) item_map.get("summary").?.string else "Private Event";
         const start = item_map.get("start").?.object;
         const start_date_time = if (start.get("dateTime") != null) start.get("dateTime").?.string else null;
-        const start_date = if (start.get("date") != null) start.get("date").?.string else null;
+        const start_date_date = if (start.get("date") != null) start.get("date").?.string else null;
         const start_timezone = if (start.get("timeZone") != null) start.get("timeZone").?.string else null;
         const end = item_map.get("end").?.object;
         const end_date_time = if (end.get("dateTime") != null) end.get("dateTime").?.string else null;
-        const end_date = if (end.get("date") != null) end.get("date").?.string else null;
+        const end_date_date = if (end.get("date") != null) end.get("date").?.string else null;
         const end_timezone = if (end.get("timeZone") != null) end.get("timeZone").?.string else null;
         const description = if (item_map.get("description") != null) item_map.get("description").?.string else null;
         const location = if (item_map.get("location") != null) item_map.get("location").?.string else null;
@@ -311,12 +325,12 @@ pub fn getData(
             .summary = try allocator.dupe(u8, summary),
             .start = .{
                 .dateTime = if (start_date_time != null) try allocator.dupe(u8, start_date_time.?) else null,
-                .date = if (start_date != null) try allocator.dupe(u8, start_date.?) else null,
+                .date = if (start_date_date != null) try allocator.dupe(u8, start_date_date.?) else null,
                 .timeZone = if (start_timezone != null) try allocator.dupe(u8, start_timezone.?) else null,
             },
             .end = .{
                 .dateTime = if (end_date_time != null) try allocator.dupe(u8, end_date_time.?) else null,
-                .date = if (end_date != null) try allocator.dupe(u8, end_date.?) else null,
+                .date = if (end_date_date != null) try allocator.dupe(u8, end_date_date.?) else null,
                 .timeZone = if (end_timezone != null) try allocator.dupe(u8, end_timezone.?) else null,
             },
             .meeting_link = if (meeting_link) |link| try allocator.dupe(u8, link) else null,
@@ -326,7 +340,11 @@ pub fn getData(
         events_list.appendAssumeCapacity(event);
     }
 
-    return try events_list.toOwnedSlice(allocator);
+    return .{
+        .events = try events_list.toOwnedSlice(allocator),
+        .start_date = start_date,
+        .end_date = end_date,
+    };
 }
 
 const DateTime = struct {
