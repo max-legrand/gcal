@@ -193,20 +193,13 @@ pub fn getData(
         .Today => {
             const today = now.date();
             start_date = today;
-            const start_time = zul.Time{
-                .hour = 0,
-                .min = 0,
-                .sec = 0,
-                .micros = 0,
-            };
-            start_string = try dateToString(allocator, today, start_time);
-            const end_time = zul.Time{
-                .hour = 23,
-                .min = 59,
-                .sec = 59,
-                .micros = 0,
-            };
-            end_string = try dateToString(allocator, today, end_time);
+            const start_dt = try zul.DateTime.initUTC(today.year, today.month, today.day, 0, 0, 0, 0);
+            const start_dt_utc = applyTzOffset(start_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            start_string = try dateToString(allocator, start_dt_utc.date(), start_dt_utc.time());
+
+            const end_dt = try zul.DateTime.initUTC(today.year, today.month, today.day, 23, 59, 59, 0);
+            const end_dt_utc = applyTzOffset(end_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            end_string = try dateToString(allocator, end_dt_utc.date(), end_dt_utc.time());
             end_date = today;
         },
         .Tomorrow => {
@@ -223,25 +216,31 @@ pub fn getData(
                 }
             }
             start_date = tomorrow;
-            const start_time = zul.Time{
-                .hour = 0,
-                .min = 0,
-                .sec = 0,
-                .micros = 0,
-            };
-            start_string = try dateToString(allocator, tomorrow, start_time);
-            const end_time = zul.Time{
-                .hour = 23,
-                .min = 59,
-                .sec = 59,
-                .micros = 0,
-            };
-            end_string = try dateToString(allocator, tomorrow, end_time);
+            const start_dt = try zul.DateTime.initUTC(tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0, 0);
+            const start_dt_utc = applyTzOffset(start_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            start_string = try dateToString(allocator, start_dt_utc.date(), start_dt_utc.time());
+
+            const end_dt = try zul.DateTime.initUTC(tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59, 0);
+            const end_dt_utc = applyTzOffset(end_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            end_string = try dateToString(allocator, end_dt_utc.date(), end_dt_utc.time());
             end_date = tomorrow;
         },
         .Custom => |dates| {
-            start_string = try allocator.dupe(u8, dates.start);
-            end_string = try allocator.dupe(u8, dates.end);
+            const start_year = std.fmt.parseInt(i16, dates.start[0..4], 10) catch return error.InvalidYear;
+            const start_month = std.fmt.parseInt(u8, dates.start[5..7], 10) catch return error.InvalidMonth;
+            const start_day = std.fmt.parseInt(u8, dates.start[8..10], 10) catch return error.InvalidDay;
+            const start_dt = try zul.DateTime.initUTC(start_year, start_month, start_day, 0, 0, 0, 0);
+            const start_dt_utc = applyTzOffset(start_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            start_string = try dateToString(allocator, start_dt_utc.date(), start_dt_utc.time());
+            start_date = start_dt_utc.date();
+
+            const end_year = std.fmt.parseInt(i16, dates.end[0..4], 10) catch return error.InvalidYear;
+            const end_month = std.fmt.parseInt(u8, dates.end[5..7], 10) catch return error.InvalidMonth;
+            const end_day = std.fmt.parseInt(u8, dates.end[8..10], 10) catch return error.InvalidDay;
+            const end_dt = try zul.DateTime.initUTC(end_year, end_month, end_day, 23, 59, 59, 0);
+            const end_dt_utc = applyTzOffset(end_dt, .{ .hour = tz_offset.hour, .min = tz_offset.min, .sec = tz_offset.sec, .micros = if (tz_offset.micros == 1) 0 else 1 });
+            end_string = try dateToString(allocator, end_dt_utc.date(), end_dt_utc.time());
+            end_date = end_dt_utc.date();
         },
     }
 

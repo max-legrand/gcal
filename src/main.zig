@@ -300,7 +300,6 @@ pub fn main() !void {
         allocator.free(calendar_id);
     }
 
-    // Group events by date
     var date_groups = std.StringHashMap(
         std.ArrayList(*calendar.Event),
     ).init(allocator);
@@ -313,7 +312,6 @@ pub fn main() !void {
         date_groups.deinit();
     }
 
-    // Process each event and organize by date(s)
     for (response.events) |event| {
         var start_date_value: []const u8 = undefined;
         var end_date_value: []const u8 = undefined;
@@ -375,7 +373,6 @@ pub fn main() !void {
         }
     }
 
-    // Sort dates and print grouped events
     var dates = std.ArrayList([]const u8).empty;
     defer dates.deinit(allocator);
 
@@ -394,8 +391,6 @@ pub fn main() !void {
     for (dates.items) |date_key| {
         const events = date_groups.get(date_key).?;
 
-        // If the date is w/in the start and end date range, print it
-        // otherwise, skip.
         const date_year = try std.fmt.parseInt(i32, date_key[0..4], 10);
         const date_month = try std.fmt.parseInt(u4, date_key[5..7], 10);
         const date_day = try std.fmt.parseInt(u5, date_key[8..10], 10);
