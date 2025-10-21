@@ -363,6 +363,8 @@ const DateTime = struct {
         if (hour > 12) {
             hour -= 12;
             meridiem = "PM";
+        } else if (hour == 12) {
+            meridiem = "PM";
         }
         return try std.fmt.allocPrint(allocator, "{d:0>2}:{d:0>2} {s}", .{ hour, self.time.min, meridiem });
     }
