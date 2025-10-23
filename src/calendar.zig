@@ -35,6 +35,7 @@ pub const Event = struct {
     meeting_link: ?[]const u8,
     description: ?[]const u8 = null,
     location: ?[]const u8 = null,
+    attendees: ?[][]const u8 = null,
 
     pub fn deinit(self: *Event, allocator: std.mem.Allocator) void {
         allocator.free(self.summary);
@@ -49,10 +50,18 @@ pub const Event = struct {
         if (self.description) |desc| {
             allocator.free(desc);
         }
+
+        if (self.attendees) |attendees| {
+            for (attendees) |attendee| {
+                allocator.free(attendee);
+            }
+            allocator.free(attendees);
+        }
     }
 };
 
 const EventResponse = struct {
+    summary: []const u8,
     items: []std.json.Value,
 };
 
@@ -320,6 +329,21 @@ pub fn getData(
         const end_timezone = if (end.get("timeZone") != null) end.get("timeZone").?.string else null;
         const description = if (item_map.get("description") != null) item_map.get("description").?.string else null;
         const location = if (item_map.get("location") != null) item_map.get("location").?.string else null;
+
+        var attendees_slice: ?[][]const u8 = null;
+        const event_atendees = item_map.get("attendees").?.array;
+        var attendees = try std.ArrayList([]const u8).initCapacity(allocator, event_atendees.items.len);
+        defer attendees.deinit(allocator);
+        for (event_atendees.items) |attendee| {
+            const email = attendee.object.get("email").?.string;
+            // Filter out the user
+            if (std.mem.eql(u8, calendar_response.value.summary, email)) continue;
+            // Filter out meeting rooms
+            if (std.mem.indexOf(u8, email, "@resource.calendar.google.com") != null) continue;
+            attendees.appendAssumeCapacity(try allocator.dupe(u8, email));
+        }
+        attendees_slice = try attendees.toOwnedSlice(allocator);
+
         event.* = .{
             .summary = try allocator.dupe(u8, summary),
             .start = .{
@@ -335,6 +359,7 @@ pub fn getData(
             .meeting_link = if (meeting_link) |link| try allocator.dupe(u8, link) else null,
             .description = if (description != null) try allocator.dupe(u8, description.?) else null,
             .location = if (location != null) try allocator.dupe(u8, location.?) else null,
+            .attendees = attendees_slice,
         };
         events_list.appendAssumeCapacity(event);
     }

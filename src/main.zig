@@ -490,6 +490,14 @@ pub fn main() !void {
                 try stdout.print("\nLink: {s}", .{meeting_link});
             }
             try stdout.print("\n", .{});
+            if (event.attendees) |attendees| {
+                try stdout.print("Attendees: \n", .{});
+                for (attendees, 0..) |attendee, i| {
+                    if (i > 0) try stdout.print(", ", .{});
+                    try stdout.print("{s}", .{attendee});
+                }
+                try stdout.print("\n", .{});
+            }
             try printDivider(stdout, divider_width, '-');
         }
         printed_count += 1;
