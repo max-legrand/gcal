@@ -331,18 +331,20 @@ pub fn getData(
         const location = if (item_map.get("location") != null) item_map.get("location").?.string else null;
 
         var attendees_slice: ?[][]const u8 = null;
-        const event_atendees = item_map.get("attendees").?.array;
-        var attendees = try std.ArrayList([]const u8).initCapacity(allocator, event_atendees.items.len);
-        defer attendees.deinit(allocator);
-        for (event_atendees.items) |attendee| {
-            const email = attendee.object.get("email").?.string;
-            // Filter out the user
-            if (std.mem.eql(u8, calendar_response.value.summary, email)) continue;
-            // Filter out meeting rooms
-            if (std.mem.indexOf(u8, email, "@resource.calendar.google.com") != null) continue;
-            attendees.appendAssumeCapacity(try allocator.dupe(u8, email));
+        if (item_map.get("attendees")) |event_atendees_json| {
+            const event_atendees = event_atendees_json.array;
+            var attendees = try std.ArrayList([]const u8).initCapacity(allocator, event_atendees.items.len);
+            defer attendees.deinit(allocator);
+            for (event_atendees.items) |attendee| {
+                const email = attendee.object.get("email").?.string;
+                // Filter out the user
+                if (std.mem.eql(u8, calendar_response.value.summary, email)) continue;
+                // Filter out meeting rooms
+                if (std.mem.indexOf(u8, email, "@resource.calendar.google.com") != null) continue;
+                attendees.appendAssumeCapacity(try allocator.dupe(u8, email));
+            }
+            attendees_slice = try attendees.toOwnedSlice(allocator);
         }
-        attendees_slice = try attendees.toOwnedSlice(allocator);
 
         event.* = .{
             .summary = try allocator.dupe(u8, summary),
@@ -431,18 +433,6 @@ pub fn parseDateTime(date_time: []const u8, user_tz: zul.Time) !DateTime {
         const second = time_parts.next() orelse return error.InvalidSecond;
 
         const timezone = offset;
-        const tz_hour = std.fmt.parseInt(u8, timezone[1..3], 10) catch return error.InvalidTimezone;
-        const tz_min = std.fmt.parseInt(u8, timezone[4..6], 10) catch return error.InvalidTimezone;
-        var tz_micros: i64 = @as(i64, @intCast(tz_hour)) * 60 * 60 * 1000 * 1000 + @as(i64, @intCast(tz_min)) * 60 * 1000 * 1000;
-        if (timezone[0] == '-') {
-            tz_micros *= -1;
-        }
-        var user_tz_micros = @as(i64, @intCast(user_tz.hour)) * 60 * 60 * 1000 * 1000 + @as(i64, @intCast(user_tz.min)) * 60 * 1000 * 1000;
-        if (user_tz.micros == 1) {
-            user_tz_micros *= -1;
-        }
-
-        const delta_micros = user_tz_micros - tz_micros;
         const parsed_time = zul.Time{
             .hour = std.fmt.parseInt(u8, hour, 10) catch return error.InvalidHour,
             .min = std.fmt.parseInt(u8, minute, 10) catch return error.InvalidMinute,
@@ -451,18 +441,36 @@ pub fn parseDateTime(date_time: []const u8, user_tz: zul.Time) !DateTime {
         };
         const parsed_dt = try zul.DateTime.initUTC(parsed_date.year, parsed_date.month, parsed_date.day, parsed_time.hour, parsed_time.min, parsed_time.sec, parsed_time.micros);
 
-        const abs_delta = @abs(delta_micros);
-        const diff_hour = @divFloor(abs_delta, 3600 * 1_000_000);
-        const diff_min = @divFloor(@mod(abs_delta, 3600 * 1_000_000), 60 * 1_000_000);
-        const diff_sec = @divFloor(@mod(abs_delta, 60 * 1_000_000), 1_000_000);
-        const diff_tz = zul.Time{
-            .hour = @intCast(diff_hour),
-            .min = @intCast(diff_min),
-            .sec = @intCast(diff_sec),
-            .micros = if (delta_micros < 0) 1 else 0,
-        };
+        if (!std.mem.eql(u8, timezone, "Z")) {
+            // Timezone is the different from the user's
+            const tz_hour = std.fmt.parseInt(u8, timezone[1..3], 10) catch return error.InvalidTimezone;
+            const tz_min = std.fmt.parseInt(u8, timezone[4..6], 10) catch return error.InvalidTimezone;
+            var tz_micros: i64 = @as(i64, @intCast(tz_hour)) * 60 * 60 * 1000 * 1000 + @as(i64, @intCast(tz_min)) * 60 * 1000 * 1000;
+            if (timezone[0] == '-') {
+                tz_micros *= -1;
+            }
+            var user_tz_micros = @as(i64, @intCast(user_tz.hour)) * 60 * 60 * 1000 * 1000 + @as(i64, @intCast(user_tz.min)) * 60 * 1000 * 1000;
+            if (user_tz.micros == 1) {
+                user_tz_micros *= -1;
+            }
 
-        adjusted_dt = applyTzOffset(parsed_dt, diff_tz);
+            const delta_micros = user_tz_micros - tz_micros;
+
+            const abs_delta = @abs(delta_micros);
+            const diff_hour = @divFloor(abs_delta, 3600 * 1_000_000);
+            const diff_min = @divFloor(@mod(abs_delta, 3600 * 1_000_000), 60 * 1_000_000);
+            const diff_sec = @divFloor(@mod(abs_delta, 60 * 1_000_000), 1_000_000);
+            const diff_tz = zul.Time{
+                .hour = @intCast(diff_hour),
+                .min = @intCast(diff_min),
+                .sec = @intCast(diff_sec),
+                .micros = if (delta_micros < 0) 1 else 0,
+            };
+
+            adjusted_dt = applyTzOffset(parsed_dt, diff_tz);
+        } else {
+            adjusted_dt = applyTzOffset(parsed_dt, user_tz);
+        }
     } else {
         adjusted_dt = try zul.DateTime.initUTC(parsed_date.year, parsed_date.month, parsed_date.day, 0, 0, 0, 0);
     }
